@@ -1,0 +1,227 @@
+---
+title: "Voronoi Municipios"
+output: html_document
+date: "2024-09-23"
+---
+
+```{r}
+# Cargar librerías necesarias
+library(sf)
+library(ggplot2)
+
+# Paso 1: Cargar los shapefiles (asegúrate de que todos los archivos relacionados están en la misma carpeta)
+frontera_iztapalapa <- st_read("C:/Users/Diego/OneDrive/Documents/Dataton/frontera_iztapalapa.shp")
+farmacias_iztapalapa <- st_read("C:/Users/Diego/OneDrive/Documents/Dataton/lambert_iztapalapa.shp")
+
+# Paso 2: Asegurarse de que ambos shapefiles están en el mismo sistema de referencia espacial
+if (st_crs(frontera_iztapalapa) != st_crs(farmacias_iztapalapa)) {
+  farmacias_iztapalapa <- st_transform(farmacias_iztapalapa, st_crs(frontera_iztapalapa))
+}
+
+# Paso 3: Graficar los datos
+ggplot() +
+  geom_sf(data = frontera_iztapalapa, fill = NA, color = "grey", size = 1) +  # Graficar la frontera
+  geom_sf(data = farmacias_iztapalapa, color = "deepskyblue", size = .5) +  # Graficar las farmacias
+  ggtitle("Frontera del municipio de Iztapalapa y las farmacias dentro de él") +
+  theme_minimal()
+
+# (Opcional) Guardar la visualización
+ggsave("iztapalapa_frontera_farmacias.png", width = 10, height = 8)
+
+```
+```{r}
+# Cargar las librerías necesarias
+library(sf)
+library(ggplot2)
+library(deldir)
+
+# Paso 1: Cargar los datos
+farmacias_iztapalapa <- st_read("C:/Users/Diego/OneDrive/Documents/Dataton/lambert_iztapalapa.shp")
+frontera_iztapalapa <- st_read("C:/Users/Diego/OneDrive/Documents/Dataton/frontera_iztapalapa.shp")
+
+# Paso 2: Extraer las coordenadas de las farmacias
+coords_farmacias <- st_coordinates(farmacias_iztapalapa)
+
+# Convertir a dataframe y renombrar las columnas
+df_farmacias <- as.data.frame(coords_farmacias)
+colnames(df_farmacias) <- c("longitud", "latitud")
+
+# Paso 3: Calcular el diagrama de Voronoi usando las coordenadas de las farmacias
+voronoi_result <- deldir(df_farmacias$longitud, df_farmacias$latitud)
+
+# Extraer los segmentos del Voronoi
+segments <- voronoi_result$dirsgs  # Asegúrate de usar voronoi_result aquí
+
+# Convertir los segmentos a un dataframe
+df_segments <- as.data.frame(segments)
+colnames(df_segments) <- c("longitud_inicio", "latitud_inicio", "longitud_fin", "latitud_fin")
+
+# Paso 4: Graficar el diagrama de Voronoi y las farmacias
+ggplot() +
+  geom_sf(data = frontera_iztapalapa, fill = NA, color = "black") +  # Frontera del municipio
+  geom_segment(data = df_segments, 
+               aes(x = longitud_inicio, y = latitud_inicio, 
+                   xend = longitud_fin, yend = latitud_fin), 
+               color = "grey") +  # Diagrama de Voronoi
+  geom_point(data = df_farmacias, aes(x = longitud, y = latitud), color = "deepskyblue", size = .5) +  # Farmacias
+  ggtitle("Diagrama de Voronoi para las farmacias en Iztapalapa") +
+  theme_minimal()
+
+# (Opcional) Guardar la visualización
+ggsave("iztapalapa_frontera_farmacias.png", width = 10, height = 8)
+
+```
+
+```{r}
+# Verificar si el objeto de Voronoi se creó correctamente
+if (is.null(voronoi.result)) {
+  stop("El diagrama de Voronoi no se creó correctamente.")
+} else {
+  print("Diagrama de Voronoi creado con éxito.")
+}
+
+```
+
+```{r}
+library(sf)
+library(ggplot2)
+library(deldir)
+
+# Cargar los shapefiles
+frontera_iztapalapa <- st_read("C:/Users/Diego/OneDrive/Documents/Dataton/frontera_iztapalapa.shp")
+lambert_iztapalapa <- st_read("C:/Users/Diego/OneDrive/Documents/Dataton/lambert_iztapalapa.shp")
+
+# Extraer las coordenadas de las farmacias
+coords_farmacias <- st_coordinates(lambert_iztapalapa)
+
+# Calcular el diagrama de Voronoi
+voronoi_result <- deldir(coords_farmacias[,1], coords_farmacias[,2])
+
+# Extraer los vértices de Voronoi
+vertices <- data.frame(voronoi_result$dirsgs)
+
+# Asegúrate de que el data frame tenga columnas x1 y y1
+names(vertices) <- c("x1", "y1", "id1", "id2")
+
+# Convertir a objeto sf
+vertices_sf <- st_as_sf(vertices[, c("x1", "y1")], coords = c("x1", "y1"), crs = st_crs(frontera_iztapalapa))
+
+# Filtrar los vértices dentro de la frontera
+vertices_sf <- vertices_sf[st_within(vertices_sf, st_geometry(frontera_iztapalapa), sparse = FALSE),]
+
+# Calcular distancias desde los vértices a los puntos de farmacias
+# Asegúrate de que vertices_sf no esté vacío
+if (nrow(vertices_sf) > 0) {
+  distances <- apply(st_coordinates(vertices_sf), 1, function(v) {
+    min(sqrt((coords_farmacias[,1] - v[1])^2 + (coords_farmacias[,2] - v[2])^2))
+  })
+  
+  # Agregar distancias a los vértices
+  vertices_sf$distance <- distances
+
+  # Filtrar vértices por un dominio y rango
+  # Ajusta estos valores según tus necesidades
+  domain_x <- c(-99.1, -99.05)
+  domain_y <- c(19.28, 19.4)
+  filtered_vertices <- vertices_sf[vertices_sf$x1 >= domain_x[1] & vertices_sf$x1 <= domain_x[2] &
+                                     vertices_sf$y1 >= domain_y[1] & vertices_sf$y1 <= domain_y[2], ]
+
+  # Crear un mapa de calor basado en la distancia
+  ggplot() +
+    geom_sf(data = frontera_iztapalapa, fill = NA, color = "black") +
+    geom_point(data = as.data.frame(st_coordinates(filtered_vertices)), 
+               aes(x = V1, y = V2, color = filtered_vertices$distance), size = 2) +
+    scale_color_gradient(low = "green", high = "red") +
+    labs(title = "Mapa de Calor de Distancias a Vértices de Voronoi",
+         color = "Distancia") +
+    theme_minimal()
+} else {
+  print("No se encontraron vértices dentro de la frontera.")
+}
+
+```
+
+```{r}
+# Cargar librerías
+library(sf)
+library(ggplot2)
+library(deldir)
+
+# Cargar los shapefiles
+frontera_iztapalapa <- st_read("C:/Users/Diego/OneDrive/Documents/Dataton/frontera_iztapalapa.shp")
+lambert_iztapalapa <- st_read("C:/Users/Diego/OneDrive/Documents/Dataton/lambert_iztapalapa.shp")
+
+# Extraer coordenadas de las farmacias
+coords_farmacias <- st_coordinates(lambert_iztapalapa)
+
+# Calcular el diagrama de Voronoi
+voronoi_result <- deldir(coords_farmacias[,1], coords_farmacias[,2])
+vertices <- data.frame(voronoi_result$dirsgs)
+names(vertices) <- c("x1", "y1", "id1", "id2")
+vertices_sf <- st_as_sf(vertices[, c("x1", "y1")], coords = c("x1", "y1"), crs = st_crs(frontera_iztapalapa))
+
+# Calcular distancias a los puntos de farmacias
+distances <- apply(st_coordinates(vertices_sf), 1, function(v) {
+  min(sqrt((coords_farmacias[,1] - v[1])^2 + (coords_farmacias[,2] - v[2])^2))
+})
+
+# Añadir las distancias al objeto de vértices
+vertices_sf$distance <- distances
+
+# Convertir vertices_sf a dataframe
+vertices_df <- as.data.frame(st_coordinates(vertices_sf))
+vertices_df$distance <- vertices_sf$distance
+
+# Renombrar las columnas de las coordenadas para evitar confusiones
+colnames(vertices_df) <- c("X", "Y", "distance")
+
+# Graficar el mapa de calor de las distancias a los vértices de Voronoi
+ggplot() +
+  geom_sf(data = frontera_iztapalapa, fill = NA, color = "black") +
+  geom_point(data = vertices_df, 
+             aes(x = X, y = Y, color = distance), size = .3) +
+  scale_color_gradient(low = "green", high = "red") +
+  labs(title = "Mapa de Calor de Distancias a Vértices de Voronoi",
+       color = "Distancia") +
+  theme_minimal()
+
+# (Opcional) Guardar la visualización
+ggsave("iztapalapa_frontera_farmacias.png", width = 10, height = 8)
+
+```
+
+```{r}
+# Filtrar los vértices que están dentro de la frontera del municipio
+vertices_filtered <- vertices_sf[st_within(vertices_sf, frontera_iztapalapa, sparse = FALSE), ]
+
+# Verificar si hay vértices dentro de la frontera
+if (nrow(vertices_filtered) > 0) {
+  # Calcular distancias a los puntos de farmacias solo para los vértices filtrados
+  distances_filtered <- apply(st_coordinates(vertices_filtered), 1, function(v) {
+    min(sqrt((coords_farmacias[,1] - v[1])^2 + (coords_farmacias[,2] - v[2])^2))
+  })
+  
+  # Añadir las distancias al objeto de vértices filtrados
+  vertices_filtered$distance <- distances_filtered
+  
+  # Convertir vertices_filtered a dataframe
+  vertices_filtered_df <- as.data.frame(st_coordinates(vertices_filtered))
+  vertices_filtered_df$distance <- vertices_filtered$distance
+  
+  # Renombrar las columnas de las coordenadas
+  colnames(vertices_filtered_df) <- c("X", "Y", "distance")
+  
+  # Graficar el mapa de calor de las distancias a los vértices de Voronoi filtrados
+  ggplot() +
+    geom_sf(data = frontera_iztapalapa, fill = NA, color = "black") +
+    geom_point(data = vertices_filtered_df, 
+               aes(x = X, y = Y, color = distance), size = .4) +
+    scale_color_gradient(low = "green", high = "red") +
+    labs(title = "Mapa de Calor de Distancias a Vértices de Voronoi (Filtrados)",
+         color = "Distancia") +
+    theme_minimal()
+} else {
+  print("No hay vértices dentro de la frontera del municipio.")
+}
+
+```
